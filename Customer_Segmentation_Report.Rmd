@@ -1,0 +1,565 @@
+---
+title: "Customer Segmentation & Analysis"
+author: "Written By Lucas Okwudishu on 06/19/2021"
+output: html_document
+theme: flatly
+highlight: tango
+code_folding: show
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+<br>
+
+![Image by [Heidi Fin](https://unsplash.com/@heidifin)](Image/mall.jpg){width="70%"}
+
+## __Introduction__
+
+In this analysis, we aim to perform customer segmentation based based on certain customers characteristics. The dataset used comes from [Kaggle](https://www.kaggle.com/vjchoudhary7/customer-segmentation-tutorial-in-python) and is one of the more popular datasets on the platform.  For this analysis however, we'll go beyond just coding and algorithms really try to take a pretty limited dataset and create analysis that will be useful to a real business. To do so, let's set up a scenario and make a few assumptions - 
+
+### __The Scenario__
+
+You have just opened a supermarket in the mall and sell products for a wide range of customers (could be apparel, shoes, or even a restaurant). As part of your rental agreement with the mall, they have provided you with this dataset to help you better understand customers that visit the mall.
+
+### __The Data__ 
+
+The dataset has 5 features and 200 observations. See data description below - 
+
++ __CustomerID:__ unique ID assigned to a customer
+
++ __Gender:__ male or female
+
++ __Age:__ customer age
+
++ __Annual_Income:__ annual income of customer
+
++ __Spending Score:__ score assigned by mall based on customer's spending nature
+
+### __Assumptions__ 
+
+Since more details are not provided about the dataset on Kaggle, we'll make a few assumptions:
+
++ The **Annual Income** ranges from 15 to 137, and no currency is provided. We'll assume this is some scaled down value from the actual income amount. 
+
++ The **Spending Score** ranges from 1 to 99. We'll assume this score is relative to the customers income level and not overall spending. Offcourse higher income earners spend more low income earners (on average) so assigning a spending score without considering income level does not make much sense. 
+
+>> Note: These assumptions do not compromise the validity of this analysis. We can still apply this steps in a reall world situation. 
+
+## __1.0:  Setup (Load Libraries & Data)__
+
+Lets load necessary packages as well as our dataset.
+
+```{r}
+# Libraries 
+
+# Data Wrangling
+library(tidyverse)
+
+# Data Visualization
+library(patchwork)
+
+# kMeans Clustering
+library(broom)
+
+```
+
+```{r}
+# Load Data
+mall_customers_raw_tbl <- read.csv("Dataset/Mall_Customers.csv") %>% 
+    as_tibble()
+
+
+# Format Data: Clean Up Column Names
+mall_customers_tbl <- mall_customers_raw_tbl %>% 
+    rename(Annual_Income = Annual.Income..k..,
+           Spending_Score = Spending.Score..1.100.)
+
+# Custom Colors for Visualization
+custom_color_2 <- c("#ce295e", "#476481")
+custom_color_3 <- c("#476481", "#ce295e", "#f57814")
+custom_color_4 <- c("#476481", "#ce295e", "#f57814", "#228b22")
+custom_color_5 <- c("#476481", "#ce295e", "#f57814", "#800080", "#228b22")
+
+# Custom function to increase the font size of x & y axis of plots
+func_plot_axis_text_format <- function(){
+    
+    theme <- theme(axis.text.x = element_text(size = 10, color = "black"),
+                   axis.text.y = element_text(size = 10, colour = "black"))
+}
+
+```
+
+### __1.1: Data Inspection__
+
+With the data loaded, we can view first few rows, check for NAs, etc:
+
+```{r}
+# View First 5 Rows
+mall_customers_tbl %>% head()
+```
+All features are numeric except for Gender.
+
+---
+
+```{r}
+# Check For NAs
+mall_customers_tbl %>% 
+    sapply(function(x)sum(is.na(x)))
+```
+
+Great! No NA values
+
+---
+
+## __2.0: Exploratory Data Analysis__
+
+First lets understand the proportion of males vs females:
+```{r, out.width="80%"}
+# Male vs Female Proportion
+mall_customers_tbl %>% 
+    group_by(Gender) %>% 
+    count() %>% 
+    ungroup() %>% 
+    mutate(Pct = n/sum(n)) %>% 
+    ggplot(aes(Gender, n, fill = Gender))+
+    geom_col(width = 0.7)+
+    func_plot_axis_text_format()+
+    theme_minimal()+
+    geom_label(aes(label = str_glue("{n} ({Pct %>% scales::percent(accuracy = 1)})")), 
+               show.legend = FALSE, color = "white")+
+    scale_fill_manual(values = custom_color_2)+
+    labs(title = "Proportion of Male vs Female Customers", y = "")
+```
+
+---
+
+```{r, out.width="80%"}
+# Histogram Age by Gender
+p1 <- mall_customers_tbl %>% 
+    ggplot(aes(Age, fill = Gender))+
+    geom_histogram(bins = 35)+
+    theme_minimal()+
+    scale_fill_manual(values = custom_color_2)+
+    # func_plot_axis_text_format()+
+    labs(title = "Age Distribution by Gender",
+         subtitle = "Median age of males is slightly higher than that of females")
+        
+    # Boxplot of Age by Gender
+p2 <- mall_customers_tbl %>% 
+    ggplot(aes(Age, fill = Gender))+
+    stat_boxplot(geom = "errorbar", width = 0.5)+
+    geom_boxplot(width = 0.5)+
+    theme_minimal()+
+    scale_fill_manual(values = custom_color_2)+
+    # func_plot_axis_text_format()+
+    theme(legend.position = "none")+
+    labs(x = "")
+
+p1 + inset_element(
+    p2, 
+    left = 0.6, 
+    bottom = 0.6, 
+    right = unit(1, 'npc') - unit(0.5, 'cm'), 
+    top = unit(1, 'npc') - unit(0.5, 'cm'))
+```
+
+---
+
+```{r}
+# Distribution of Income by Gender
+p3 <- mall_customers_tbl %>% 
+    ggplot(aes(Annual_Income, fill = Gender))+
+    stat_boxplot(geom = "errorbar", width = 0.5)+
+    geom_boxplot(width = 0.5)+
+    theme_minimal()+
+    scale_fill_manual(values = custom_color_2)+
+    # func_plot_axis_text_format()+
+    labs(title = "Distribution of Annual Income by Gender",
+         subtitle = "Median Annual Income of males is slightly higher than that of females")
+        
+
+# Distribution of Spending Score by Gender
+p4 <- mall_customers_tbl %>% 
+    ggplot(aes(Spending_Score, fill = Gender))+
+    stat_boxplot(geom = "errorbar", width = 0.5)+
+    geom_boxplot(width = 0.5)+
+    theme_minimal()+
+    scale_fill_manual(values = custom_color_2)+
+    # func_plot_axis_text_format()+
+    labs(title = "Distribution of Spending Score by Gender",
+         subtitle = "Wider range of Spendin Score for men, though lower than that of females overall")
+
+p3 / p4 + plot_layout(guides = "collect")
+    
+```
+
+---
+
+# Scatter Plots
+
+```{r, fig.height=7}
+age_income_cor <- 
+    cor(mall_customers_tbl$Age, mall_customers_tbl$Annual_Income) %>% scales::percent(accuracy = .1)
+
+p5 <- mall_customers_tbl %>% 
+    ggplot(aes(Age, Annual_Income))+
+    geom_point(aes(color = Gender), size = 2, alpha = 0.8)+
+    theme_minimal()+
+    scale_color_manual(values = custom_color_2)+
+    # func_plot_axis_text_format()+
+    labs(title = "Annual Income vs Age", 
+         subtitle = paste("Correlation = ", age_income_cor),
+         y = "Annual Income")
+
+
+age_score_cor <- 
+    cor(mall_customers_tbl$Age, mall_customers_tbl$Spending_Score) %>% scales::percent(accuracy = .1)
+
+p6 <- mall_customers_tbl %>% 
+    ggplot(aes(Age, Spending_Score))+
+    geom_point(aes(color = Gender), size = 2, alpha = 0.8)+
+    theme_minimal()+
+    scale_color_manual(values = custom_color_2)+
+    # func_plot_axis_text_format()+
+    labs(title = "Spending Score vs Age", 
+         subtitle = paste("Correlation = ", age_score_cor),
+         y = "Spending Score", x = "Age")
+
+income_score_cor <- 
+    cor(mall_customers_tbl$Annual_Income, mall_customers_tbl$Spending_Score) %>% scales::percent(accuracy = .1)
+
+p7 <- mall_customers_tbl %>% 
+    ggplot(aes(Annual_Income, Spending_Score))+
+    geom_point(aes(color = Gender), size = 2, alpha = 0.8)+
+    theme_minimal()+
+    scale_color_manual(values = custom_color_2)+
+    # func_plot_axis_text_format()+
+    labs(title = "Annual Income vs Spending score", 
+         subtitle = paste("Correlation = ", income_score_cor),
+         y = "Spending Score", x = "Annual Income")
+
+p5 / p6 / p7 + plot_layout(guides = "collect")
+```
+
+Very little negative correlation can be observed between Age and Annual Spending Score. We can see a dip in Annual Income at about Age 40. No correlation is seen between Annual Income and Age and between Annual Income and Spending Score. 
+
+---
+
+## __3.0: KMEANS Clustering__
+
+We could easily just perform a KMEANS clustering on all 3 features, however I would like to add some flexibility to how the supermarket might want to slice and dice customers based on their product offering. We'll therefore cluster the following features separately:
+
++ Age and Annual Income
+
++ Age and Spending Score
+
++ Annual Income and Spending Score
+
+To achieve this, we'll go through the following steps:
+
++ Step 1: Scale numeric features (Age, Annual Income, Spending Score)
+
++ Step 2: Calculate the **total within sum of squares** (**tot.withinss**) for a range of centers
+
++ Step 3: Visualize within sum of squares with a **skree plot** to determine the optimal number of clusters
+
++ Step 4: Perform KMeans clustering for the optimal number of clusters
+
++ Step 5: Add clusters to original dataset
+
+---
+
+#### __Step 1: Scale Numeric Variables:__
+
+```{r}
+# Scale Dataset
+scaled_mall_customers_tbl <- mall_customers_tbl %>% 
+    select(-c(CustomerID, Gender)) %>% 
+    sapply(function(x)(x - min(x, na.rm = T)) / (max(x, na.rm = T) - min(x, na.rm=T)))
+
+# Create Separate Matrices
+age_income_matrix <- scaled_mall_customers_tbl[, -3] # age & annual income matrix
+age_spend_matrix <- scaled_mall_customers_tbl[, -2] # age & spending score matrix
+income_spend_matrix <- scaled_mall_customers_tbl[, -1] # annual income & spending score matrix
+
+# View first 5 rows of age_income_matrix
+age_income_matrix[1:5,]
+```
+
+---
+
+#### __Step 2: Calculate Total Within Sum of Squares for a Range of Centers:__
+
+```{r}
+
+# KMEANS Mapper Function
+# func_kmeans_mapper_1 <- function(centers = 3){
+#     
+#     income_spend_matrix %>% 
+#         kmeans(centers = centers, nstart = 100)
+# }
+
+# Calculate Withinss for Age & Income
+set.seed(100)
+age_income_wcss <- vector()
+for (i in 1:10) age_income_wcss[i] <- sum(kmeans(age_income_matrix, nstart = 100, i)$withinss)
+
+# Calculate Withinss for Age & Income
+set.seed(101)
+age_spend_wcss <- vector()
+for (i in 1:10) age_spend_wcss[i] <- sum(kmeans(age_spend_matrix, nstart = 100, i)$withinss)
+
+# Calculate Withinss for Income & Spending Score
+set.seed(102)
+income_spend_wcss <- vector()
+for (i in 1:10) income_spend_wcss[i] <- sum(kmeans(income_spend_matrix, nstart = 100, i)$withinss)
+
+
+# Create Dataframes with Total Within Sum of Squares
+
+# Age & Income
+age_income_mapper_tbl <- tibble(centers = 1:10) %>% 
+    mutate(tot.withinss = age_income_wcss)
+    
+# Age & Spending Score
+age_spend_mapper_tbl <- tibble(centers = 1:10) %>% 
+    mutate(tot.withinss = age_spend_wcss)
+   
+# Income & Spending Score
+income_spend_mapper_tbl <- tibble(centers = 1:10) %>% 
+    mutate(tot.withinss = income_spend_wcss)
+
+```
+
+We now have now calculated the total within sum of squares for each matrix, and we can now create our skree plots.
+
+---
+
+#### __Step 3: Create Skree Plots:__ 
+
+```{r, fig.height=9}
+# Skree Plots
+
+# Skree Plot Function
+func_skree_plot <- function(data_mapped){
+    
+    data_mapped %>% 
+        ggplot(aes(centers, tot.withinss))+
+        geom_point(color = "#476481")+
+        geom_line(color = "#476481")+
+        ggrepel::geom_label_repel(aes(label = centers), size = 3)+
+        
+        # formatting
+        theme_minimal()+
+        labs(x = "Centers", y = "Total Within Sum of Squares")
+        
+}
+
+# Age & Income skree plot: optimal clusters = 4
+p8 <- age_income_mapper_tbl %>% func_skree_plot()+
+    labs(title = "Scree Plot: Age & Annual Income",
+         subtitle = str_glue("Measures distance of each customer from closest K-Means center
+                             Optimal number of clusters: 3 or 4"))
+
+# Age & Spending Score skree plot: optimal clusters = 4
+p9 <- age_spend_mapper_tbl %>% func_skree_plot()+
+      labs(title = "Scree Plot: Age & Spending Score",
+         subtitle = str_glue("Measures distance of each customer from closest K-Means center
+                             Optimal number of clusters: 4 or 5"))
+
+# Income & Spending Score skree plot: optimal clusters = 5
+p10 <- income_spend_mapper_tbl %>% func_skree_plot()+
+       labs(title = "Scree Plot: Income & Spending Score",
+         subtitle = str_glue("Measures distance of each customer from closest K-Means center
+                             Optimal number of clusters: 5"))
+
+p8 / p9 / p10
+```
+
+---
+
+#### __Step 4: Perform KMeans Using the Optimal Number of Clusters:__
+
+Looking at the skree, we can see the optimal number of clusters for Age and Income is 3 or 4, we'll go with 4. The optimal number of clusters of Age and Spending Score is 3 or 4, we'll go with 4 again. The optimal number of clusters for Income and Spending Score is 5.
+
+Next we'll create KMeans objects for each of our matrices.
+
+```{r}
+# KMeans Object for Age & Income
+set.seed(250)
+age_income_kmeans_obj <- age_income_matrix %>% 
+    kmeans(centers = 4, nstart = 100)
+
+set.seed(300)
+# KMeans Object for Age & Spending Score
+age_spend_kmeans_obj <- age_spend_matrix %>% 
+    kmeans(centers = 4, nstart = 100)
+
+set.seed(350)
+# KMeans Object for Income & Spending Score
+income_spend_kmeans_obj <- income_spend_matrix %>% 
+    kmeans(centers = 5, nstart = 100)
+
+```
+
+We can take a look at the contents of one of our KMeans objects which shows the cluster means, cluster vector and within sum of squares for each cluster:
+
+```{r}
+age_income_kmeans_obj
+```
+
+---
+
+#### __Step 5: Add Clusters to Original Dataset__
+
+Now that we have our 3 cluster objects, we can add the clusters back to our original data for further analysis using the **`augment()`** from the **`broom`** package:
+
+```{r}
+# Bind Clusters to Original (Unscaled Dataset)
+customers_clusters_tbl <- age_income_kmeans_obj %>% 
+    augment(data = mall_customers_tbl) %>% 
+    rename(age_income_cluster = .cluster) %>% 
+    
+    bind_cols(
+        age_spend_kmeans_obj %>% 
+            augment(data = mall_customers_tbl) %>% 
+            select(.cluster) %>% 
+            rename(age_spend_cluster = .cluster)
+        ) %>% 
+    
+    bind_cols(
+        income_spend_kmeans_obj %>% 
+            augment(data = mall_customers_tbl) %>% 
+            select(.cluster) %>% 
+            rename(income_spend_cluster = .cluster)
+    )
+
+customers_clusters_tbl %>% glimpse()
+
+```
+
+---
+
+## __4.0:  Analyzing Clusters__
+
+Now that we have our 3 clusters, we can do some further analysis and understand characteristics of customers in each cluster. We have provided the supermarket with the flexibility to segment customers 3 different ways depending on who their targets are for products or promos. Let's go ahead and visualize the clusters.
+
+```{r, out.width="80%"}
+# Age & Income clusters
+customers_clusters_tbl %>% 
+    ggplot(aes(Age, Annual_Income, color = age_income_cluster))+
+    geom_point(size = 2, alpha = 0.8)+
+    scale_color_manual(values = custom_color_4)+
+    theme_minimal()+
+    labs(title = "Age & Income Clusters", y = "Annual Income")
+```
+
+For Age and Income:
+
++ Cluster 1: younger adults / medium income
+
++ Cluster 2: middle aged adults / medium to high income
+
++ Cluster 3: older adults / low to medium income
+
++ Cluster 4: younger adults / lower income. 
+
+---
+
+```{r, out.width="80%"}
+# Age & Spending Score clusters
+customers_clusters_tbl %>% 
+    ggplot(aes(Age, Spending_Score, color = age_spend_cluster))+
+    geom_point(size = 2, alpha = 0.8)+
+    scale_color_manual(values = custom_color_4)+
+    theme_minimal()+
+    labs(title = "Age & Spending Score Clusters", y = "Spending Score")
+```
+
+For Age and Spending Score:
+
++ Cluster 1: middle aged to older adults / low spending score
+
++ Cluster 2: young to middle aged adults / low to medium spending score
+
++ Cluster 3: middle to older adults / medium spending score
+
++ Cluster 4: young to middle aged adults / high spending score
+
+---
+
+```{r}
+# Annual Income & Spending Score clusters
+customers_clusters_tbl %>% 
+    ggplot(aes(Annual_Income, Spending_Score, color = income_spend_cluster))+
+    geom_point(size = 2, alpha = 0.8)+
+    scale_color_manual(values = custom_color_5)+
+    theme_minimal()+
+    labs(title = "Income & Spending Score Clusters", y = "Spending Score", x = "Annual Income")
+```
+
+For Income and Spending Score:
+
++ Cluster 1: medium annual income / medium spending score
+
++ Cluster 2: high annual income / low spending score
+
++ Cluster 3: low annual income / high spending score
+
++ Cluster 4: high annual income / high spending score
+
++ Cluster 5: low income / low spending score
+
+---
+
+Additionally, the Age and Annual Income clusters show a little bit of overlap with regard to clusters 1, 2 and 3. We may want to further dig into this a bit more.
+
+### __4.1:  Annual Income Groups__
+
+We can further group this feature into low, medium and high categories. We could use the 33rd and 66th percentile to determine our breaks.
+
+```{r}
+income_bins <- customers_clusters_tbl %>% pull(Annual_Income) %>% quantile(probs = c(0, 0.33, 0.66, 1))
+income_bins
+```
+
+We can use 15 - 48 as Low, 49 - 71.34 as Medium and values above 71.34 as High. Lets add these income bins to the dataset.
+
+```{r}
+# Add income bins to dataset
+customers_clusters_bins_tbl <- customers_clusters_tbl %>% 
+    mutate(income_bin = case_when(
+        Annual_Income <= 48    ~ "Low",
+        Annual_Income <= 71.34 ~ "Medium",
+        TRUE ~ "High"
+    )) %>% 
+    mutate(income_bin = income_bin %>% fct_relevel("Low", "Medium", "High"))
+
+customers_clusters_bins_tbl %>% glimpse()
+```
+
+We now have Income Bins added to our dataset. We can visualized the Age and Income clusters once again.
+
+```{r}
+customers_clusters_bins_tbl %>% 
+    ggplot(aes(Age, Annual_Income, color = age_income_cluster, shape = income_bin))+
+    geom_point(size = 2)+
+    scale_color_manual(values = custom_color_4)+
+    theme_minimal()+
+    labs(title = "Age & Income Clusters with Income Bins", y = "Annual Income")
+```
+
+Creating Income Bins can be helpful to the supermarket to understand customers better as we can see in the plot. Looking at Cluster 1, certain customers can be seen as young adults/low income, while others can be seen as young adults/medium income. Likewise in Cluster 2, certain customers can be seen as middle aged/medium income, while others can be seen as young adults/high income or middle aged adults/high income.
+
+## __5.0:  Wrapping Up__
+
+In this analysis, we segmented customers 3 different ways based on certain characteristics. We segmented customers based on Age and Income, Age and Spending Score, and finally Income and Spending Score. Additionally, we determined 3 groups of customers based on their income i.e low, medium and high income. This provides our hypothetical supermarket with additional flexibility while targeting customers. 
+
+You can find source code in my [Github Repository](https://github.com/LucasO21/Customer-Segmentation).
+
+
+
+
