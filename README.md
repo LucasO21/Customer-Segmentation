@@ -25,4 +25,4 @@ Customers were segmented by Age and Income, Age and Spending Score and Income an
 
 Age and Income clusters were further analyzed to provide an additional within cluster binning of income into low, medium and high income. 
 
-See final article [here](https://lucasoblog.netlify.app/#projects).
+See final article [here](https://rpubs.com/LucasO/799240).
